@@ -12,8 +12,8 @@ func main() {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"Status": "ok"}`))
 		w.Header().Set("application/json", "Content-Type")
+		w.Write([]byte(`{"Status": "ok"}`))
 	})
 
 	mux.HandleFunc("POST /echo", func(w http.ResponseWriter, r *http.Request) {
@@ -24,6 +24,7 @@ func main() {
 			fmt.Println(err)
 			return
 		}
+		json.NewEncoder(w).Encode(payload)
 	})
 	server := &http.Server{Addr: ":8080", Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	server.ListenAndServe()
