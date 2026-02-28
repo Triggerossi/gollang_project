@@ -7,30 +7,23 @@ import (
 	"time"
 )
 
-func main() {
+func main3() {
 	mux := http.NewServeMux()
 
-	var users = map[string]int{
-		"Tom":   1,
-		"Anna":  2,
-		"Fraef": 3,
+	type User struct {
+		Id   int    `json:"id"`
+		Name string `json:"name"`
 	}
 
-	mux.HandleFunc("GET /users", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-type", "application/json")
-
-		// if err := json.NewDecoder(r.Body).Decode(users); err != nil{
-		// 	fmt.Println("Failed from users get", http.StatusInternalServerError)
-		// 	return
-		// }
-		if err := json.NewEncoder(w).Encode(users); err != nil {
+	mux.HandleFunc("GET /users/{id}", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		u := User{Id: 20, Name: "Alex"}
+		if err := json.NewEncoder(w).Encode(u); err != nil {
 			fmt.Println("Failed", http.StatusInternalServerError)
 		}
+		return
 	})
-	/* 	mux.HandleFunc("GET /users", func(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-type", "application/json")
-	fmt.Println("slash") */
-	/* }) тут надо сделать вложенные стурктуры с error */
+
 	srv := &http.Server{
 		Addr:              ":8080",
 		Handler:           mux,
