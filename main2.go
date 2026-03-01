@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -38,6 +40,34 @@ func validateemail(email string, fieldname string) error {
 	return nil
 }
 
+type ApiError struct {
+	Code      string `json:"code"`
+	Message   string `json:"message"`
+	Requestid string `json:"requestid"`
+}
+
+type ErrorResponse struct {
+	Error ApiError `json:"error"`
+}
+
+func writeerror(w http.ResponseWriter, status int, code, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+
+	resp := ErrorResponse{
+		Error: ApiError{
+			Code:    code,
+			Message: msg,
+		},
+	}
+
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err == nil {
+		resp.Error.Requestid = hex.EncodeToString(b)
+	}
+
+	_ = json.NewEncoder(w).Encode(resp)
+}
 func main() {
 	mux := http.NewServeMux()
 
@@ -62,15 +92,15 @@ func main() {
 		idstr := r.PathValue("id")
 		id, err := strconv.Atoi(idstr)
 		if err != nil {
-			fmt.Println(w, http.StatusBadRequest)
+			writeerror(w, http.StatusBadRequest, "empty", "add somthing")
 		}
 		if id < 0 {
-			fmt.Println(w, http.StatusBadRequest)
+			writeerror(w, http.StatusBadRequest, "invalid id", "id need to positive")
 		}
 
 		user, found := users[id]
 		if !found {
-			fmt.Println(w, http.StatusNotFound, "user s %d id ne naiden", id)
+			writeerror(w, http.StatusNotFound, "user is not found", "this user didn't created")
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -80,12 +110,12 @@ func main() {
 	mux.HandleFunc("POST /users", func(w http.ResponseWriter, r *http.Request) {
 		var req Createuserrequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			fmt.Println(w, http.StatusBadRequest)
+			writeerror(w, http.StatusBadRequest, "invalid error", "change somrthing")
 			return
 		}
 		for _, user := range users {
 			if user.Email == req.Email {
-				fmt.Println(w, http.StatusConflict, "email_conflict", "use this email")
+				writeerror(w, http.StatusConflict, "email_conflict", "use another email")
 				return
 			}
 		}
@@ -107,7 +137,7 @@ func main() {
 			errs = append(errs, err)
 		}
 		if len(errs) > 0 {
-			fmt.Println("ошибка тут %s", errs[0])
+			writeerror(w, http.StatusBadRequest, "validation failed", "change smf")
 			return
 		}
 
