@@ -83,6 +83,12 @@ func main() {
 			fmt.Println(w, http.StatusBadRequest)
 			return
 		}
+		for _, user := range users {
+			if user.Email == req.Email {
+				fmt.Println(w, http.StatusConflict, "email_conflict", "use this email")
+				return
+			}
+		}
 
 		var errs []error
 		if err := validateRequired(req.Email, "email"); err != nil {
@@ -102,6 +108,7 @@ func main() {
 		}
 		if len(errs) > 0 {
 			fmt.Println("ошибка тут %s", errs[0])
+			return
 		}
 
 		newUser := User{
@@ -113,6 +120,7 @@ func main() {
 		nextid++
 
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(newUser)
 	})
 
