@@ -33,7 +33,7 @@ func validateemail(email string, fieldname string) error {
 	}
 	_, err := mail.ParseAddress(email)
 	if err != nil {
-		fmt.Errorf("поле %s ошибочно", fieldname)
+		return fmt.Errorf("поле %s ошибочно", fieldname)
 	}
 	return nil
 }
