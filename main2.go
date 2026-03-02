@@ -140,7 +140,6 @@ func main() {
 			writeerror(w, http.StatusBadRequest, "validation failed", "change smf")
 			return
 		}
-
 		newUser := User{
 			Id:    nextid,
 			Name:  req.Name,
@@ -152,6 +151,117 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(newUser)
+	})
+	mux.HandleFunc("PUT /users/{id}", func(w http.ResponseWriter, r *http.Request) {
+		idstr := r.PathValue("id")
+		id, err := strconv.Atoi(idstr)
+		if err != nil {
+			writeerror(w, http.StatusBadRequest, "empty", "add somthing")
+			return
+		}
+		if id < 0 {
+			writeerror(w, http.StatusBadRequest, "invalid id", "id need to positive")
+			return
+		}
+
+		user, found := users[id]
+		if !found {
+			writeerror(w, http.StatusNotFound, "user is not found", "this user didn't created")
+			return
+		}
+
+		var req Createuserrequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeerror(w, http.StatusBadRequest, "so bad json", "send good json")
+			return
+		}
+		var errs []error
+		if err := validateRequired(req.Email, "email"); err != nil {
+			errs = append(errs, err)
+		}
+		if err := validateRequired(req.Name, "name"); err != nil {
+			errs = append(errs, err)
+		}
+		if err := validateemail(req.Email, "email"); err != nil {
+			errs = append(errs, err)
+		}
+		if err := validatelen(req.Email, "email"); err != nil {
+			errs = append(errs, err)
+		}
+		if err := validatelen(req.Name, "name"); err != nil {
+			errs = append(errs, err)
+		}
+		if len(errs) > 0 {
+			writeerror(w, http.StatusBadRequest, "validation failed", "change smf")
+			return
+		}
+
+		if user.Email != req.Email {
+			for _, u := range users {
+				if req.Email == u.Email {
+					writeerror(w, http.StatusConflict, "this email used", "change email")
+					return
+				}
+			}
+		}
+
+		user.Email = req.Email
+		user.Name = req.Name
+		users[id] = user
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(user)
+	})
+	mux.HandleFunc("PATCH /users/{id}", func(w http.ResponseWriter, r *http.Request) {
+		idstr := r.PathValue("id")
+		id, err := strconv.Atoi(idstr)
+		if err != nil {
+			writeerror(w, http.StatusBadRequest, "empty", "add somthing")
+		}
+		if id < 0 {
+			writeerror(w, http.StatusBadRequest, "invalid id", "id need to positive")
+		}
+
+		user, found := users[id]
+		if !found {
+			writeerror(w, http.StatusNotFound, "user is not found", "this user didn't created")
+		}
+
+		var req Createuserrequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeerror(w, http.StatusBadRequest, "so bad json", "send good json")
+			fmt.Println(err)
+			return
+		}
+
+		if req.Email != "" {
+			if err := validateemail(req.Email, "email"); err != nil {
+				writeerror(w, http.StatusBadRequest, "bad email", "send good emaul")
+			}
+			if err := validatelen(req.Email, "email"); err != nil {
+				writeerror(w, http.StatusBadRequest, "long or short", "change len")
+			}
+			if user.Email != req.Email {
+				for _, u := range users {
+					if req.Email == u.Email {
+						writeerror(w, http.StatusConflict, "this email used", "change email")
+						return
+					}
+				}
+			}
+			user.Email = req.Email
+		}
+		if req.Name != "" {
+			if err := validatelen(req.Name, "name"); err != nil {
+				writeerror(w, http.StatusBadRequest, "long or short", "change len")
+				return
+			}
+			user.Name = req.Name
+		}
+
+		users[id] = user
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(user)
 	})
 
 	srv := &http.Server{
