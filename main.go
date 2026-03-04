@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/mail"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Triggerossi/gollang_project/repo"
 	_ "github.com/lib/pq"
 )
 
@@ -79,6 +81,7 @@ func main() {
 		panic(err)
 	}
 	defer db.Close()
+	userRepo := repo.NewUserRepo(db)
 	err = db.Ping()
 	if err != nil {
 		panic(err)
@@ -117,59 +120,85 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(user)
 	})
-
 	mux.HandleFunc("POST /users", func(w http.ResponseWriter, r *http.Request) {
-		var req Createuserrequest
+		var req struct {
+			Name  string `json:"name"`
+			Email string `json:"email"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeerror(w, http.StatusBadRequest, "invalid error", "change somrthing")
+			writeerror(w, 400, "bad_json", "плохой json")
 			return
 		}
-		for _, user := range users {
-			if user.Email == req.Email {
-				writeerror(w, http.StatusConflict, "email_conflict", "use another email")
+
+		id, err := userRepo.Create(r.Context(), req.Name, req.Email)
+		if err != nil {
+			if errors.Is(err, repo.ErrEmailExists) {
+				writeerror(w, 409, "email_conflict", "email уже занят")
 				return
 			}
-		}
-
-		var errs []error
-		if err := validateRequired(req.Email, "email"); err != nil {
-			errs = append(errs, err)
-		}
-		if err := validateRequired(req.Name, "name"); err != nil {
-			errs = append(errs, err)
-		}
-		if err := validateemail(req.Email, "email"); err != nil {
-			errs = append(errs, err)
-		}
-		if err := validatelen(req.Email, "email"); err != nil {
-			errs = append(errs, err)
-		}
-		if err := validatelen(req.Name, "name"); err != nil {
-			errs = append(errs, err)
-		}
-		if len(errs) > 0 {
-			writeerror(w, http.StatusBadRequest, "validation failed", "change smf")
+			writeerror(w, 500, "db_error", "ошибка базы")
 			return
 		}
-		var id int
-		db.QueryRow("insert into users (name, email) values ($1, $2) returning id", req.Name, req.Email).Scan(&id)
-		/*
-			newUser := User{
-				Id:    nextid,
-				Name:  req.Name,
-				Email: req.Email,
-			} */
-		/* users[nextid] = newUser
-		nextid++ */
 
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
+		w.WriteHeader(201)
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"Id":    id,
-			"Name":  req.Name,
-			"Email": req.Email,
+			"id":    id,
+			"name":  req.Name,
+			"email": req.Email,
 		})
 	})
+	// mux.HandleFunc("POST /users", func(w http.ResponseWriter, r *http.Request) {
+	// 	var req Createuserrequest
+	// 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	// 		writeerror(w, http.StatusBadRequest, "invalid error", "change somrthing")
+	// 		return
+	// 	}
+	// 	for _, user := range users {
+	// 		if user.Email == req.Email {
+	// 			writeerror(w, http.StatusConflict, "email_conflict", "use another email")
+	// 			return
+	// 		}
+	// 	}
+
+	// 	var errs []error
+	// 	if err := validateRequired(req.Email, "email"); err != nil {
+	// 		errs = append(errs, err)
+	// 	}
+	// 	if err := validateRequired(req.Name, "name"); err != nil {
+	// 		errs = append(errs, err)
+	// 	}
+	// 	if err := validateemail(req.Email, "email"); err != nil {
+	// 		errs = append(errs, err)
+	// 	}
+	// 	if err := validatelen(req.Email, "email"); err != nil {
+	// 		errs = append(errs, err)
+	// 	}
+	// 	if err := validatelen(req.Name, "name"); err != nil {
+	// 		errs = append(errs, err)
+	// 	}
+	// 	if len(errs) > 0 {
+	// 		writeerror(w, http.StatusBadRequest, "validation failed", "change smf")
+	// 		return
+	// 	}
+	// 	var id int
+	// 	db.QueryRow("insert into users (name, email) values ($1, $2) returning id", req.Name, req.Email).Scan(&id)
+	// 	/*
+	// 		newUser := User{
+	// 			Id:    nextid,
+	// 			Name:  req.Name,
+	// 			Email: req.Email,
+	// 		} */
+	// 	/* users[nextid] = newUser
+	// 	nextid++ */
+
+	// 	w.Header().Set("Content-Type", "application/json")
+	// 	w.WriteHeader(http.StatusCreated)
+	// 	json.NewEncoder(w).Encode(map[string]interface{}{
+	// 		"Id":    id,
+	// 		"Name":  req.Name,
+	// 		"Email": req.Email,
+	// 	})
+	// })
 	mux.HandleFunc("PUT /users/{id}", func(w http.ResponseWriter, r *http.Request) {
 		idstr := r.PathValue("id")
 		id, err := strconv.Atoi(idstr)
