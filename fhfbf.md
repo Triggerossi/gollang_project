@@ -1,24 +1,9 @@
-# только имя
-Invoke-WebRequest -Uri http://localhost:8080/users/11 `
-  -Method Put `
-  -ContentType "application/json" `
-  -Body '{"name":"СуперНовоеИмя"}' `
-  -UseBasicParsing
+docker exec -it local_postgres psql -U myuser -d myapp -c "SELECT * FROM users;"
+
+curl.exe -X POST http://localhost:8080/users -H "Content-Type: application/json" -d '{\"name\":\"Анна\",\"email\":\"anna@example.com\"}'
 
 
-# только email
-Invoke-WebRequest -Uri http://localhost:8080/users/11 `
-  -Method Put `
-  -ContentType "application/json" `
-  -Body '{"email":"changed.email@new.ru"}' `
-  -UseBasicParsing
+Invoke-WebRequest -Uri http://localhost:8080/users -Method POST -ContentType "application/json" -Body '{"name":"Alexey","email":"alex@gmail.com"}'
 
 
-# оба поля
-Invoke-WebRequest -Uri http://localhost:8080/users/11 `
-  -Method Put `
-  -ContentType "application/json" `
-  -Body '{"name":"ПолноеИмя","email":"final.email@domain.ru"}' `
-  -UseBasicParsing
-  
-curl.exe -X PATCH http://localhost:8080/users/8 -d '{"name":"test"}'
+Invoke-WebRequest -Uri http://localhost:8080/users/1

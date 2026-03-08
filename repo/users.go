@@ -4,11 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+
+	"github.com/lib/pq"
 )
 
-var ErrNotFound = errors.New("user not found")
-var ErrEmailExists = errors.New("email already exists")
-var ErrDatabase = errors.New("database error")
+var (
+	ErrNotFound    = errors.New("user not found")
+	ErrEmailExists = errors.New("email already exists")
+	ErrDatabase    = errors.New("database error")
+)
 
 type User struct {
 	ID    int64  `json:"id"`
@@ -25,22 +29,74 @@ func NewUserRepo(db *sql.DB) *UserRepo {
 }
 
 func (r *UserRepo) Create(ctx context.Context, name, email string) (int64, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
 	var id int64
-	err := r.db.QueryRowContext(ctx,
-		`INSERT INTO users (name, email)
-		 VALUES ($1, $2)
+	err = tx.QueryRowContext(ctx,
+		`INSERT INTO users (name, email, created_at)
+		 VALUES ($1, $2, NOW())
 		 RETURNING id`,
 		name, email,
 	).Scan(&id)
-
 	if err != nil {
-		if err.Error() == `pq: duplicate key value violates unique constraint "users_email_key"` {
+		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" {
 			return 0, ErrEmailExists
 		}
 		return 0, errors.Join(ErrDatabase, err)
 	}
 
+	_, err = tx.ExecContext(ctx,
+		`INSERT INTO audit_logs (action, entity_id) VALUES ('create', $1)`,
+		id,
+	)
+	if err != nil {
+		return 0, errors.Join(ErrDatabase, err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+
 	return id, nil
+}
+
+func (r *UserRepo) Update(ctx context.Context, id int64, name, email string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if err != nil {
+		return errors.Join(ErrDatabase, err)
+	}
+
+	_, err = tx.ExecContext(ctx,
+		`UPDATE users 
+		 SET name = $1, email = $2
+		 WHERE id = $3`,
+		name, email, id,
+	)
+	if err != nil {
+		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" {
+			return ErrEmailExists
+		}
+		return errors.Join(ErrDatabase, err)
+	}
+
+	_, err = tx.ExecContext(ctx,
+		`INSERT INTO audit_logs (action, entity_id) VALUES ('update', $1)`,
+		id,
+	)
+	if err != nil {
+		return errors.Join(ErrDatabase, err)
+	}
+
+	return tx.Commit()
 }
 
 func (r *UserRepo) GetByID(ctx context.Context, id int64) (*User, error) {

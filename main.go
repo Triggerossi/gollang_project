@@ -74,18 +74,20 @@ func writeerror(w http.ResponseWriter, status int, code, msg string) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 func main() {
-
 	connStr := "host=localhost port=5432 user=myuser password=mypassword dbname=myapp sslmode=disable"
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		panic(err)
 	}
 	defer db.Close()
-	userRepo := repo.NewUserRepo(db)
+
 	err = db.Ping()
 	if err != nil {
 		panic(err)
 	}
+
+	userRepo := repo.NewUserRepo(db)
+
 	mux := http.NewServeMux()
 
 	type Createuserrequest struct {
@@ -94,32 +96,34 @@ func main() {
 	}
 
 	type User struct {
-		Id    int    `json:"id"`
+		Id    int64  `json:"id"`
 		Name  string `json:"name"`
 		Email string `json:"email"`
 	}
 
-	var users = map[int]User{}
-	//var nextid = 1
-
 	mux.HandleFunc("GET /users/{id}", func(w http.ResponseWriter, r *http.Request) {
 		idstr := r.PathValue("id")
-		id, err := strconv.Atoi(idstr)
+		id, err := strconv.ParseInt(idstr, 10, 64)
 		if err != nil {
-			writeerror(w, http.StatusBadRequest, "empty", "add somthing")
-		}
-		if id < 0 {
-			writeerror(w, http.StatusBadRequest, "invalid id", "id need to positive")
+			writeerror(w, http.StatusBadRequest, "invalid_id", "id должен быть числом")
+			return
 		}
 
-		user, found := users[id]
-		if !found {
-			writeerror(w, http.StatusNotFound, "user is not found", "this user didn't created")
+		user, err := userRepo.GetByID(r.Context(), id)
+		if err != nil {
+			if errors.Is(err, repo.ErrNotFound) {
+				writeerror(w, http.StatusNotFound, "not_found", "пользователь не найден")
+				return
+			}
+			fmt.Println("GET error:", err)
+			writeerror(w, http.StatusInternalServerError, "db_error", "ошибка базы")
+			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(user)
 	})
+
 	mux.HandleFunc("POST /users", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Name  string `json:"name"`
@@ -133,182 +137,79 @@ func main() {
 		id, err := userRepo.Create(r.Context(), req.Name, req.Email)
 		if err != nil {
 			if errors.Is(err, repo.ErrEmailExists) {
-				writeerror(w, 409, "email_conflict", "email уже занят")
+				writeerror(w, http.StatusConflict, "email_conflict", "email уже занят")
 				return
 			}
-			writeerror(w, 500, "db_error", "ошибка базы")
+			fmt.Println("CREATE error:", err)
+			writeerror(w, http.StatusInternalServerError, "db_error", "ошибка базы")
 			return
 		}
 
-		w.WriteHeader(201)
+		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"id":    id,
 			"name":  req.Name,
 			"email": req.Email,
 		})
 	})
-	// mux.HandleFunc("POST /users", func(w http.ResponseWriter, r *http.Request) {
-	// 	var req Createuserrequest
-	// 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-	// 		writeerror(w, http.StatusBadRequest, "invalid error", "change somrthing")
-	// 		return
-	// 	}
-	// 	for _, user := range users {
-	// 		if user.Email == req.Email {
-	// 			writeerror(w, http.StatusConflict, "email_conflict", "use another email")
-	// 			return
-	// 		}
-	// 	}
 
-	// 	var errs []error
-	// 	if err := validateRequired(req.Email, "email"); err != nil {
-	// 		errs = append(errs, err)
-	// 	}
-	// 	if err := validateRequired(req.Name, "name"); err != nil {
-	// 		errs = append(errs, err)
-	// 	}
-	// 	if err := validateemail(req.Email, "email"); err != nil {
-	// 		errs = append(errs, err)
-	// 	}
-	// 	if err := validatelen(req.Email, "email"); err != nil {
-	// 		errs = append(errs, err)
-	// 	}
-	// 	if err := validatelen(req.Name, "name"); err != nil {
-	// 		errs = append(errs, err)
-	// 	}
-	// 	if len(errs) > 0 {
-	// 		writeerror(w, http.StatusBadRequest, "validation failed", "change smf")
-	// 		return
-	// 	}
-	// 	var id int
-	// 	db.QueryRow("insert into users (name, email) values ($1, $2) returning id", req.Name, req.Email).Scan(&id)
-	// 	/*
-	// 		newUser := User{
-	// 			Id:    nextid,
-	// 			Name:  req.Name,
-	// 			Email: req.Email,
-	// 		} */
-	// 	/* users[nextid] = newUser
-	// 	nextid++ */
-
-	// 	w.Header().Set("Content-Type", "application/json")
-	// 	w.WriteHeader(http.StatusCreated)
-	// 	json.NewEncoder(w).Encode(map[string]interface{}{
-	// 		"Id":    id,
-	// 		"Name":  req.Name,
-	// 		"Email": req.Email,
-	// 	})
-	// })
 	mux.HandleFunc("PUT /users/{id}", func(w http.ResponseWriter, r *http.Request) {
 		idstr := r.PathValue("id")
-		id, err := strconv.Atoi(idstr)
+		id, err := strconv.ParseInt(idstr, 10, 64)
 		if err != nil {
-			writeerror(w, http.StatusBadRequest, "empty", "add somthing")
-			return
-		}
-		if id < 0 {
-			writeerror(w, http.StatusBadRequest, "invalid id", "id need to positive")
+			writeerror(w, http.StatusBadRequest, "invalid_id", "id должен быть числом")
 			return
 		}
 
-		user, found := users[id]
-		if !found {
-			writeerror(w, http.StatusNotFound, "user is not found", "this user didn't created")
-			return
+		var req struct {
+			Name  string `json:"name"`
+			Email string `json:"email"`
 		}
-
-		var req Createuserrequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeerror(w, http.StatusBadRequest, "so bad json", "send good json")
+			writeerror(w, http.StatusBadRequest, "invalid_json", "некорректный JSON")
 			return
 		}
-		var errs []error
-		if err := validateRequired(req.Email, "email"); err != nil {
-			errs = append(errs, err)
-		}
+
+		var valErr error
 		if err := validateRequired(req.Name, "name"); err != nil {
-			errs = append(errs, err)
+			valErr = err
+		} else if err := validateRequired(req.Email, "email"); err != nil {
+			valErr = err
+		} else if err := validateemail(req.Email, "email"); err != nil {
+			valErr = err
+		} else if err := validatelen(req.Name, "name"); err != nil {
+			valErr = err
+		} else if err := validatelen(req.Email, "email"); err != nil {
+			valErr = err
 		}
-		if err := validateemail(req.Email, "email"); err != nil {
-			errs = append(errs, err)
-		}
-		if err := validatelen(req.Email, "email"); err != nil {
-			errs = append(errs, err)
-		}
-		if err := validatelen(req.Name, "name"); err != nil {
-			errs = append(errs, err)
-		}
-		if len(errs) > 0 {
-			writeerror(w, http.StatusBadRequest, "validation failed", "change smf")
+
+		if valErr != nil {
+			writeerror(w, http.StatusBadRequest, "validation_error", valErr.Error())
 			return
 		}
 
-		if user.Email != req.Email {
-			for _, u := range users {
-				if req.Email == u.Email {
-					writeerror(w, http.StatusConflict, "this email used", "change email")
-					return
-				}
-			}
-		}
-
-		user.Email = req.Email
-		user.Name = req.Name
-		users[id] = user
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(user)
-	})
-	mux.HandleFunc("PATCH /users/{id}", func(w http.ResponseWriter, r *http.Request) {
-		idstr := r.PathValue("id")
-		id, err := strconv.Atoi(idstr)
+		err = userRepo.Update(r.Context(), id, req.Name, req.Email)
 		if err != nil {
-			writeerror(w, http.StatusBadRequest, "empty", "add somthing")
-		}
-		if id < 0 {
-			writeerror(w, http.StatusBadRequest, "invalid id", "id need to positive")
-		}
-
-		user, found := users[id]
-		if !found {
-			writeerror(w, http.StatusNotFound, "user is not found", "this user didn't created")
-		}
-
-		var req Createuserrequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeerror(w, http.StatusBadRequest, "so bad json", "send good json")
-			fmt.Println(err)
-			return
-		}
-
-		if req.Email != "" {
-			if err := validateemail(req.Email, "email"); err != nil {
-				writeerror(w, http.StatusBadRequest, "bad email", "send good emaul")
-			}
-			if err := validatelen(req.Email, "email"); err != nil {
-				writeerror(w, http.StatusBadRequest, "long or short", "change len")
-			}
-			if user.Email != req.Email {
-				for _, u := range users {
-					if req.Email == u.Email {
-						writeerror(w, http.StatusConflict, "this email used", "change email")
-						return
-					}
-				}
-			}
-			user.Email = req.Email
-		}
-		if req.Name != "" {
-			if err := validatelen(req.Name, "name"); err != nil {
-				writeerror(w, http.StatusBadRequest, "long or short", "change len")
+			if errors.Is(err, repo.ErrNotFound) {
+				writeerror(w, http.StatusNotFound, "not_found", "пользователь не найден")
 				return
 			}
-			user.Name = req.Name
+			if errors.Is(err, repo.ErrEmailExists) {
+				writeerror(w, http.StatusConflict, "email_conflict", "email уже занят")
+				return
+			}
+			fmt.Println("UPDATE error:", err)
+			writeerror(w, http.StatusInternalServerError, "db_error", "ошибка базы")
+			return
 		}
 
-		users[id] = user
-
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(user)
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":    id,
+			"name":  req.Name,
+			"email": req.Email,
+		})
 	})
 
 	srv := &http.Server{
@@ -316,9 +217,9 @@ func main() {
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
-	fmt.Println("Starting server at: %s", srv.Addr)
-	err = srv.ListenAndServe()
-	if err != nil {
-		fmt.Println("Failed to start server: %s", srv.Addr)
+
+	fmt.Printf("Starting server at %s\n", srv.Addr) // ← исправил printf
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		fmt.Printf("Server failed: %v\n", err)
 	}
 }

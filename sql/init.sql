@@ -6,9 +6,9 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 
-insert into users (name, email) Values 
+/* insert into users (name, email) Values 
     ('alex', 'alex@gmail.com'),
-    ('mohamed', 'mohamed@gmail.com')
+    ('mohamed', 'mohamed@gmail.com' */
 on conflict do nothing;
 
 
